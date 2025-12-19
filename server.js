@@ -24,37 +24,57 @@ app.get("/health", (req, res) => {
 
 // Translation webhook endpoint
 app.post("/translate", async (req, res) => {
-  const { projectId, templateZipUrl, targetLanguage, vertical, formData } = req.body
+  const {
+    jobId,
+    projectId,
+    userId,
+    templateId,
+    language,
+    vertical,
+    trafficSource,
+    tone,
+    siteName,
+    contactEmail,
+    projectName,
+  } = req.body
 
-  // Validate request
-  if (!projectId || !templateZipUrl || !targetLanguage) {
+  if (!jobId || !projectId || !templateId || !language) {
     return res.status(400).json({ error: "Missing required fields" })
   }
 
-  console.log(`[Railway] Received translation job for project ${projectId}`)
+  console.log(`[Railway] Received translation job ${jobId} for project ${projectId}`)
 
-  // Return immediately - processing happens in background
-  res.json({ received: true, projectId })
+  res.json({ received: true, jobId, projectId })
 
-  // Process translation asynchronously with unlimited retries
-  processTranslationWithRetry(projectId, templateZipUrl, targetLanguage, vertical, formData)
+  processTranslationWithRetry({
+    jobId,
+    projectId,
+    userId,
+    templateId,
+    language,
+    vertical,
+    trafficSource,
+    tone,
+    siteName,
+    contactEmail,
+    projectName,
+  })
 })
 
-async function processTranslationWithRetry(projectId, templateZipUrl, targetLanguage, vertical, formData) {
+async function processTranslationWithRetry(data) {
   let attempt = 0
 
   while (true) {
     attempt++
-    console.log(`[Railway] Translation attempt ${attempt} for project ${projectId}`)
+    console.log(`[Railway] Translation attempt ${attempt} for job ${data.jobId}`)
 
     try {
-      await processTranslationJob(projectId, templateZipUrl, targetLanguage, vertical, formData)
-      console.log(`[Railway] Translation completed successfully for project ${projectId}`)
-      break // Success - exit loop
+      await processTranslationJob(data)
+      console.log(`[Railway] Translation completed successfully for job ${data.jobId}`)
+      break
     } catch (error) {
       console.error(`[Railway] Translation attempt ${attempt} failed:`, error.message)
 
-      // Wait before retrying (exponential backoff, max 5 minutes)
       const delay = Math.min(Math.pow(2, attempt) * 1000, 300000)
       console.log(`[Railway] Retrying in ${delay / 1000} seconds...`)
       await new Promise((resolve) => setTimeout(resolve, delay))
