@@ -6,6 +6,17 @@ app.use(express.json())
 
 const PORT = process.env.PORT || 3001
 
+app.get("/", (req, res) => {
+  res.json({
+    service: "PurePage Translation Worker",
+    status: "running",
+    endpoints: {
+      health: "/health",
+      translate: "POST /translate",
+    },
+  })
+})
+
 // Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "translation-worker" })
