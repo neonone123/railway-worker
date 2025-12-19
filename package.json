@@ -1,0 +1,16 @@
+{
+  "name": "purepage-translation-worker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "@google/generative-ai": "^0.21.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@vercel/blob": "^0.24.0",
+    "jszip": "^3.10.1"
+  }
+}
