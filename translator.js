@@ -56,7 +56,17 @@ export async function processTranslationJob(data) {
     const indexHtml = template.html_template
     const htmlFiles = [{ filename: "index.html", html: indexHtml }]
 
-    const allFiles = Object.keys(templateZip.files)
+    const allFiles = Object.keys(templateZip.files).filter((filename) => {
+      // Skip __MACOSX folders
+      if (filename.includes("__MACOSX")) return false
+      // Skip files starting with ._
+      const baseName = filename.split("/").pop()
+      if (baseName.startsWith("._")) return false
+      // Skip .DS_Store files
+      if (baseName === ".DS_Store") return false
+      return true
+    })
+
     for (const filename of allFiles) {
       const file = templateZip.files[filename]
       if (file.dir) continue
@@ -125,16 +135,17 @@ export async function processTranslationJob(data) {
 
     const outputZip = new JSZip()
 
-    // Detect template folder structure
     let templateFolder = ""
-    const firstFile = allFiles.find((f) => !templateZip.files[f].dir && f.includes("/"))
-    if (firstFile) {
-      templateFolder = firstFile.split("/")[0] + "/"
+    const firstRealFile = allFiles.find((f) => {
+      const file = templateZip.files[f]
+      return !file.dir && f.includes("/") && !f.includes("__MACOSX") && !f.split("/").pop().startsWith("._")
+    })
+    if (firstRealFile) {
+      templateFolder = firstRealFile.split("/")[0] + "/"
     }
 
     console.log(`[Railway] Template folder: ${templateFolder || "(root)"}`)
 
-    // Copy all non-HTML files
     const copyPromises = allFiles.map(async (filename) => {
       const file = templateZip.files[filename]
       if (file.dir || filename.toLowerCase().endsWith(".html")) {
@@ -219,7 +230,7 @@ async function updateProgress(jobId, progress, currentStep) {
 }
 
 async function translateHTML(html, targetLanguage, vertical) {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" })
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
 
   const prompt = `You are translating a complete webpage to ${targetLanguage}.
 
