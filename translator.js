@@ -53,35 +53,32 @@ export async function processTranslationJob(data) {
     const zipBuffer = await zipResponse.arrayBuffer()
     const templateZip = await JSZip.loadAsync(zipBuffer)
 
-    const indexHtml = template.html_template
-    const htmlFiles = [{ filename: "index.html", html: indexHtml }]
+    const htmlFiles = []
 
     const allFiles = Object.keys(templateZip.files).filter((filename) => {
-      // Skip __MACOSX folders
       if (filename.includes("__MACOSX")) return false
-      // Skip files starting with ._
       const baseName = filename.split("/").pop()
       if (baseName.startsWith("._")) return false
-      // Skip .DS_Store files
       if (baseName === ".DS_Store") return false
       return true
     })
 
+    // Find all HTML files in the ZIP
     for (const filename of allFiles) {
       const file = templateZip.files[filename]
       if (file.dir) continue
 
       const lowerFilename = filename.toLowerCase()
-      if (
-        lowerFilename.endsWith("privacy.html") ||
-        lowerFilename.endsWith("terms.html") ||
-        lowerFilename.endsWith("tos.html")
-      ) {
+      if (lowerFilename.endsWith(".html")) {
         const html = await file.async("text")
         const baseName = filename.split("/").pop()
         htmlFiles.push({ filename: baseName, html })
         console.log(`[Railway] Found HTML file: ${filename}`)
       }
+    }
+
+    if (htmlFiles.length === 0) {
+      throw new Error("No HTML files found in template ZIP")
     }
 
     await updateProgress(jobId, 25, "Fetching content snippets...")
@@ -188,16 +185,22 @@ export async function processTranslationJob(data) {
 
     await supabase.rpc("decrement_pages", { user_id_param: userId })
 
-    await supabase
+    const { error: projectUpdateError } = await supabase
       .from("projects")
       .update({
         status: "completed",
-        generated_html: translatedFiles.find((f) => f.filename === "index.html")?.html || "",
         zip_url: blob.url,
       })
       .eq("id", projectId)
 
-    await supabase
+    if (projectUpdateError) {
+      console.error(`[Railway] Failed to update project:`, projectUpdateError)
+      throw new Error(`Failed to update project: ${projectUpdateError.message}`)
+    }
+
+    console.log(`[Railway] Project updated with ZIP URL: ${blob.url}`)
+
+    const { error: queueUpdateError } = await supabase
       .from("translation_queue")
       .update({
         status: "completed",
@@ -207,6 +210,10 @@ export async function processTranslationJob(data) {
         completed_at: new Date().toISOString(),
       })
       .eq("id", jobId)
+
+    if (queueUpdateError) {
+      console.error(`[Railway] Failed to update queue:`, queueUpdateError)
+    }
 
     console.log(`[Railway] Job ${jobId} completed successfully!`)
   } catch (error) {
