@@ -183,51 +183,60 @@ ${html}`
 }
 
 export async function translateAllHTMLFiles(files, language, vertical) {
-  console.log(`[Railway] 🌍 Starting PARALLEL translation of ${files.length} HTML files to ${language}`)
+  console.log(`[Railway] 🌍 Starting SEQUENTIAL translation of ${files.length} HTML files to ${language}`)
 
-  const translationPromises = files.map(async (file, index) => {
+  const translatedFiles = []
+  const failedFiles = []
+
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index]
+
     try {
       console.log(
         `[Railway] 📄 [${index + 1}/${files.length}] Starting translation of ${file.filename}... (${file.html.length} chars)`,
       )
 
-      const translatedHTML = await translateHTML(file.html, language, vertical)
+      const translationPromise = translateHTML(file.html, language, vertical)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`File translation timeout after 120 seconds`)), 120000),
+      )
+
+      const translatedHTML = await Promise.race([translationPromise, timeoutPromise])
 
       console.log(
         `[Railway] ✅ [${index + 1}/${files.length}] Successfully translated ${file.filename} (${translatedHTML.length} chars)`,
       )
 
-      return {
+      translatedFiles.push({
         filename: file.filename,
+        originalPath: file.originalPath,
         html: translatedHTML,
         success: true,
-      }
+      })
     } catch (error) {
-      console.error(`[Railway] ❌❌❌ FAILED to translate ${file.filename}:`, error.message)
+      console.error(`[Railway] ❌ FAILED to translate ${file.filename}:`, error.message)
       console.error(`[Railway] Error stack:`, error.stack)
 
-      return {
+      failedFiles.push({
         filename: file.filename,
-        html: null,
-        success: false,
         error: error.message,
-      }
+      })
+
+      console.log(`[Railway] ⚠️ Continuing with remaining files...`)
     }
-  })
-
-  const results = await Promise.all(translationPromises)
-
-  const failures = results.filter((r) => !r.success)
-  if (failures.length > 0) {
-    console.error(`[Railway] ❌ ${failures.length} file(s) failed to translate:`)
-    failures.forEach((f) => {
-      console.error(`[Railway]   - ${f.filename}: ${f.error}`)
-    })
-    throw new Error(`Failed to translate ${failures.length} file(s): ${failures.map((f) => f.filename).join(", ")}`)
   }
 
-  const translatedFiles = results.filter((r) => r.success)
-  console.log(`[Railway] 🎉 Successfully translated all ${translatedFiles.length} files in parallel!`)
+  if (failedFiles.length > 0) {
+    console.error(`[Railway] ❌ ${failedFiles.length} file(s) failed to translate:`)
+    failedFiles.forEach((f) => {
+      console.error(`[Railway]   - ${f.filename}: ${f.error}`)
+    })
+    throw new Error(
+      `Failed to translate ${failedFiles.length} file(s): ${failedFiles.map((f) => f.filename).join(", ")}`,
+    )
+  }
+
+  console.log(`[Railway] 🎉 Successfully translated all ${translatedFiles.length} files sequentially!`)
 
   return translatedFiles
 }
