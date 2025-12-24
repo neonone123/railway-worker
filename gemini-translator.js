@@ -53,6 +53,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function withTimeout(promise, timeoutMs, errorMessage) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs)),
+  ])
+}
+
 export async function translateHTML(html, language, vertical, maxRetries = 3) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY not configured")
@@ -113,7 +120,11 @@ ${html}`
       console.log(`[Railway] 🔄 Translation attempt ${attempt}/${maxRetries} for language: ${language}`)
       console.log(`[Railway] Original HTML length: ${html.length} characters`)
 
-      const result = await model.generateContent(prompt)
+      const result = await withTimeout(
+        model.generateContent(prompt),
+        90000,
+        `Gemini API timeout after 90 seconds for ${language} translation`,
+      )
       let translatedHTML = result.response.text()
 
       console.log(`[Railway] ✉️ Received response from Gemini (${translatedHTML.length} chars)`)
@@ -157,12 +168,16 @@ ${html}`
       return translatedHTML
     } catch (error) {
       console.error(`[Railway] ❌ Translation attempt ${attempt} failed:`, error)
+      console.error(`[Railway] Error message: ${error.message}`)
+      console.error(`[Railway] Error stack:`, error.stack)
 
       if (attempt === maxRetries) {
         throw new Error(`Translation API failed after ${maxRetries} attempts: ${error.message}`)
       }
 
-      await sleep(2000 * attempt)
+      const waitTime = 2000 * attempt
+      console.log(`[Railway] ⏳ Waiting ${waitTime}ms before retry ${attempt + 1}...`)
+      await sleep(waitTime)
     }
   }
 }
