@@ -171,24 +171,48 @@ export async function translateAllHTMLFiles(files, language, vertical) {
   console.log(`[Railway] 🌍 Starting PARALLEL translation of ${files.length} HTML files to ${language}`)
 
   const translationPromises = files.map(async (file, index) => {
-    console.log(
-      `[Railway] 📄 [${index + 1}/${files.length}] Starting translation of ${file.filename}... (${file.html.length} chars)`,
-    )
+    try {
+      console.log(
+        `[Railway] 📄 [${index + 1}/${files.length}] Starting translation of ${file.filename}... (${file.html.length} chars)`,
+      )
 
-    const translatedHTML = await translateHTML(file.html, language, vertical)
+      const translatedHTML = await translateHTML(file.html, language, vertical)
 
-    console.log(
-      `[Railway] ✅ [${index + 1}/${files.length}] Successfully translated ${file.filename} (${translatedHTML.length} chars)`,
-    )
+      console.log(
+        `[Railway] ✅ [${index + 1}/${files.length}] Successfully translated ${file.filename} (${translatedHTML.length} chars)`,
+      )
 
-    return {
-      filename: file.filename,
-      html: translatedHTML,
+      return {
+        filename: file.filename,
+        html: translatedHTML,
+        success: true,
+      }
+    } catch (error) {
+      console.error(`[Railway] ❌❌❌ FAILED to translate ${file.filename}:`, error.message)
+      console.error(`[Railway] Error stack:`, error.stack)
+
+      return {
+        filename: file.filename,
+        html: null,
+        success: false,
+        error: error.message,
+      }
     }
   })
 
-  const translatedFiles = await Promise.all(translationPromises)
-  console.log(`[Railway] 🎉 Successfully translated all ${files.length} files in parallel!`)
+  const results = await Promise.all(translationPromises)
+
+  const failures = results.filter((r) => !r.success)
+  if (failures.length > 0) {
+    console.error(`[Railway] ❌ ${failures.length} file(s) failed to translate:`)
+    failures.forEach((f) => {
+      console.error(`[Railway]   - ${f.filename}: ${f.error}`)
+    })
+    throw new Error(`Failed to translate ${failures.length} file(s): ${failures.map((f) => f.filename).join(", ")}`)
+  }
+
+  const translatedFiles = results.filter((r) => r.success)
+  console.log(`[Railway] 🎉 Successfully translated all ${translatedFiles.length} files in parallel!`)
 
   return translatedFiles
 }
