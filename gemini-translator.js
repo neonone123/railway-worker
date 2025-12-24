@@ -70,9 +70,10 @@ export async function translateHTML(html, language, vertical, maxRetries = 3) {
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-3-flash-preview",
     generationConfig: {
       temperature: 0.3,
+      maxOutputTokens: 8192,
     },
     safetySettings: [
       {
@@ -94,26 +95,19 @@ export async function translateHTML(html, language, vertical, maxRetries = 3) {
     ],
   })
 
-  const prompt = `You are translating a complete webpage to ${language}.
+  const prompt = `Translate this HTML page to ${language}. 
 
-CRITICAL RULES (FAILURE TO FOLLOW WILL RESULT IN REJECTION):
-1. Translate ONLY text content between HTML tags
-2. NEVER modify HTML tags, attributes, class names, IDs, or structure
-3. Keep ALL image src paths exactly as-is
-4. Keep ALL links href exactly as-is
-5. Keep ALL data-* attributes exactly as-is
-6. Preserve all formatting, line breaks, and whitespace structure
-7. Return ONLY the complete translated HTML starting with <!DOCTYPE html>
-8. Do NOT add any explanations, comments, or notes before or after the HTML
-9. Your response must start with <!DOCTYPE html> and end with </html>
+RULES:
+- Translate ONLY the text content inside HTML tags
+- Keep ALL HTML tags, attributes, classes, IDs exactly as they are
+- Keep ALL URLs, image paths, and links unchanged
+- Return the COMPLETE HTML document starting with <!DOCTYPE html>
+- Do NOT add explanations or code blocks - return ONLY the HTML
 
-Context:
-- Vertical: ${vertical}
-- Target Language: ${language}
-- This is a landing page, translate naturally and persuasively
+HTML:
+${html}
 
-HTML to translate:
-${html}`
+Output the translated HTML now:`
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
