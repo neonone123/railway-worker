@@ -2,6 +2,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/ge
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "")
 
+// Language character validation patterns - EXACT copy from working Vercel code
 const LANGUAGE_PATTERNS = {
   ru: /[А-Яа-яЁё]/,
   ar: /[\u0600-\u06FF]/,
@@ -13,39 +14,55 @@ const LANGUAGE_PATTERNS = {
   hi: /[\u0900-\u097F]/,
   el: /[\u0370-\u03FF]/,
   vi: /[\u00C0-\u1EF9]/,
+  // European languages use Latin characters
+  es: /./,
+  fr: /./,
+  de: /./,
+  pt: /./,
+  it: /./,
+  pl: /./,
+  nl: /./,
+  sv: /./,
+  tr: /./,
 }
 
+// EXACT validation logic from working Vercel code
 function isValidTranslation(html, language, originalHtml) {
-  console.log(`[Railway] 🔍 Validating translation for language: ${language}`)
+  console.log(`[Railway] Validating translation for language: ${language}`)
   console.log(`[Railway] Original HTML length: ${originalHtml.length}, Translated HTML length: ${html.length}`)
 
-  // Check 1: Has basic HTML structure
+  // Check 1: Has basic HTML structure (very lenient)
   const hasHTML = html.toLowerCase().includes("<html") && html.toLowerCase().includes("</html>")
   if (!hasHTML) {
-    console.error("[Railway] ❌ Validation failed: Missing HTML structure")
+    console.log(`[Railway] VALIDATION FAILED: Missing HTML structure`)
+    console.log(`[Railway] First 500 chars: ${html.substring(0, 500)}`)
+    console.log(`[Railway] Last 500 chars: ${html.substring(html.length - 500)}`)
     return false
   }
-  console.log("[Railway] ✅ Check 1 passed: HTML structure present")
+  console.log("[Railway] Check 1 PASSED: HTML structure present")
 
   // Check 2: Not empty
   if (html.length < 200) {
-    console.error(`[Railway] ❌ Validation failed: Translation too short (${html.length} characters)`)
+    console.log(`[Railway] VALIDATION FAILED: Translation too short (${html.length} characters)`)
     return false
   }
-  console.log(`[Railway] ✅ Check 2 passed: Sufficient length (${html.length} chars)`)
+  console.log(`[Railway] Check 2 PASSED: Sufficient length (${html.length} chars)`)
 
   // Check 3: For non-Latin languages, check if target characters exist
   const strictLanguageCheck = ["ru", "ar", "zh", "ja", "ko", "he", "th", "hi", "el"]
   if (strictLanguageCheck.includes(language)) {
     const pattern = LANGUAGE_PATTERNS[language]
     if (pattern && !pattern.test(html)) {
-      console.error(`[Railway] ❌ Validation failed: No ${language} characters found in translation`)
+      console.log(`[Railway] VALIDATION FAILED: No ${language} characters found in translation`)
+      console.log(`[Railway] Sample of translation (chars 500-1000): ${html.substring(500, 1000)}`)
       return false
     }
-    console.log(`[Railway] ✅ Check 3 passed: ${language.toUpperCase()} characters detected`)
+    console.log(`[Railway] Check 3 PASSED: ${language.toUpperCase()} characters detected`)
+  } else {
+    console.log(`[Railway] Check 3 SKIPPED: ${language} uses Latin script`)
   }
 
-  console.log(`[Railway] ✅✅✅ ALL validation checks passed for ${language}!`)
+  console.log(`[Railway] ALL VALIDATION CHECKS PASSED for ${language}!`)
   return true
 }
 
@@ -53,13 +70,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function withTimeout(promise, timeoutMs, errorMessage) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs)),
-  ])
-}
-
+// EXACT translation function from working Vercel code
 export async function translateHTML(html, language, vertical, maxRetries = 3) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY not configured")
@@ -69,61 +80,55 @@ export async function translateHTML(html, language, vertical, maxRetries = 3) {
     return html
   }
 
+  // EXACT model config from working Vercel code - NO maxOutputTokens limit!
   const model = genAI.getGenerativeModel({
     model: "gemini-3-flash-preview",
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: 8192,
+      // NO maxOutputTokens - let Gemini use its full capacity
     },
     safetySettings: [
-      {
-        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-      },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
     ],
   })
 
-  const prompt = `Translate this HTML page to ${language}. 
+  // EXACT prompt from working Vercel code
+  const prompt = `You are translating a complete webpage to ${language}.
 
-RULES:
-- Translate ONLY the text content inside HTML tags
-- Keep ALL HTML tags, attributes, classes, IDs exactly as they are
-- Keep ALL URLs, image paths, and links unchanged
-- Return the COMPLETE HTML document starting with <!DOCTYPE html>
-- Do NOT add explanations or code blocks - return ONLY the HTML
+CRITICAL RULES (FAILURE TO FOLLOW WILL RESULT IN REJECTION):
+1. Translate ONLY text content between HTML tags
+2. NEVER modify HTML tags, attributes, class names, IDs, or structure
+3. Keep ALL image src paths exactly as-is
+4. Keep ALL links href exactly as-is
+5. Keep ALL data-* attributes exactly as-is
+6. Preserve all formatting, line breaks, and whitespace structure
+7. Return ONLY the complete translated HTML starting with <!DOCTYPE html>
+8. Do NOT add any explanations, comments, or notes before or after the HTML
+9. Your response must start with <!DOCTYPE html> and end with </html>
 
-HTML:
-${html}
+Context:
+- Vertical: ${vertical}
+- Target Language: ${language}
+- This is a landing page, translate naturally and persuasively
 
-Output the translated HTML now:`
+HTML to translate:
+${html}`
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[Railway] 🔄 Translation attempt ${attempt}/${maxRetries} for language: ${language}`)
+      console.log(`[Railway] Translation attempt ${attempt}/${maxRetries} for language: ${language}`)
       console.log(`[Railway] Original HTML length: ${html.length} characters`)
 
-      const result = await withTimeout(
-        model.generateContent(prompt),
-        90000,
-        `Gemini API timeout after 90 seconds for ${language} translation`,
-      )
+      const result = await model.generateContent(prompt)
       let translatedHTML = result.response.text()
 
-      console.log(`[Railway] ✉️ Received response from Gemini (${translatedHTML.length} chars)`)
+      console.log(`[Railway] Received response from Gemini (${translatedHTML.length} chars)`)
 
-      // Remove markdown code blocks
+      // EXACT cleanup logic from working Vercel code
+      // Remove markdown code blocks (multiple formats)
       translatedHTML = translatedHTML.replace(/^```html\s*/i, "")
       translatedHTML = translatedHTML.replace(/^```\s*/i, "")
       translatedHTML = translatedHTML.replace(/\s*```$/i, "")
@@ -138,99 +143,78 @@ Output the translated HTML now:`
       // Remove any text after closing html tag
       const htmlEndIndex = translatedHTML.toLowerCase().lastIndexOf("</html>")
       if (htmlEndIndex > 0) {
-        translatedHTML = translatedHTML.substring(0, htmlEndIndex + 7)
+        translatedHTML = translatedHTML.substring(0, htmlEndIndex + 7) // 7 is length of '</html>'
       }
 
       translatedHTML = translatedHTML.trim()
 
-      console.log(`[Railway] 🧹 After cleanup: ${translatedHTML.length} characters`)
+      console.log(`[Railway] After cleanup: ${translatedHTML.length} characters`)
 
-      const validationResult = isValidTranslation(translatedHTML, language, html)
-      console.log(`[Railway] 📋 Validation result: ${validationResult}`)
+      const isValid = isValidTranslation(translatedHTML, language, html)
+      console.log(`[Railway] Validation result: ${isValid}`)
 
-      if (!validationResult) {
+      if (!isValid) {
         if (attempt < maxRetries) {
-          console.log(`[Railway] ⚠️ Validation failed, retrying in ${2 * attempt} seconds...`)
-          await sleep(2000 * attempt)
+          const waitTime = 2000 * attempt
+          console.log(`[Railway] Validation failed, retrying in ${waitTime}ms...`)
+          await sleep(waitTime)
           continue
         } else {
           throw new Error(`Translation validation failed after ${maxRetries} attempts`)
         }
       }
 
-      console.log(`[Railway] ✅ Translation successful on attempt ${attempt}!`)
+      console.log(`[Railway] Translation successful on attempt ${attempt}!`)
       return translatedHTML
     } catch (error) {
-      console.error(`[Railway] ❌ Translation attempt ${attempt} failed:`, error)
-      console.error(`[Railway] Error message: ${error.message}`)
-      console.error(`[Railway] Error stack:`, error.stack)
+      console.log(`[Railway] Translation attempt ${attempt} failed: ${error.message}`)
 
       if (attempt === maxRetries) {
         throw new Error(`Translation API failed after ${maxRetries} attempts: ${error.message}`)
       }
 
       const waitTime = 2000 * attempt
-      console.log(`[Railway] ⏳ Waiting ${waitTime}ms before retry ${attempt + 1}...`)
+      console.log(`[Railway] Waiting ${waitTime}ms before retry...`)
       await sleep(waitTime)
     }
   }
+
+  throw new Error("Unexpected translation failure")
 }
 
+// EXACT parallel translation from working Vercel code
 export async function translateAllHTMLFiles(files, language, vertical) {
-  console.log(`[Railway] 🌍 Starting SEQUENTIAL translation of ${files.length} HTML files to ${language}`)
+  console.log(`[Railway] Starting PARALLEL translation of ${files.length} HTML files to ${language}`)
 
-  const translatedFiles = []
-  const failedFiles = []
-
-  for (let index = 0; index < files.length; index++) {
-    const file = files[index]
+  const translationPromises = files.map(async (file, index) => {
+    console.log(
+      `[Railway] [${index + 1}/${files.length}] Starting translation of ${file.filename}... (${file.html.length} chars)`,
+    )
 
     try {
-      console.log(
-        `[Railway] 📄 [${index + 1}/${files.length}] Starting translation of ${file.filename}... (${file.html.length} chars)`,
-      )
-
-      const translationPromise = translateHTML(file.html, language, vertical)
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`File translation timeout after 120 seconds`)), 120000),
-      )
-
-      const translatedHTML = await Promise.race([translationPromise, timeoutPromise])
+      const translatedHTML = await translateHTML(file.html, language, vertical)
 
       console.log(
-        `[Railway] ✅ [${index + 1}/${files.length}] Successfully translated ${file.filename} (${translatedHTML.length} chars)`,
+        `[Railway] [${index + 1}/${files.length}] Successfully translated ${file.filename} (${translatedHTML.length} chars)`,
       )
 
-      translatedFiles.push({
+      return {
         filename: file.filename,
         originalPath: file.originalPath,
         html: translatedHTML,
-        success: true,
-      })
+      }
     } catch (error) {
-      console.error(`[Railway] ❌ FAILED to translate ${file.filename}:`, error.message)
-      console.error(`[Railway] Error stack:`, error.stack)
-
-      failedFiles.push({
-        filename: file.filename,
-        error: error.message,
-      })
-
-      console.log(`[Railway] ⚠️ Continuing with remaining files...`)
+      console.log(`[Railway] Failed to translate ${file.filename}: ${error.message}`)
+      throw error
     }
+  })
+
+  try {
+    const translatedFiles = await Promise.all(translationPromises)
+    console.log(`[Railway] Successfully translated all ${files.length} files!`)
+    return translatedFiles
+  } catch (error) {
+    console.log(`[Railway] Parallel translation failed: ${error.message}`)
+    throw error
   }
-
-  if (failedFiles.length > 0) {
-    console.error(`[Railway] ❌ ${failedFiles.length} file(s) failed to translate:`)
-    failedFiles.forEach((f) => {
-      console.error(`[Railway]   - ${f.filename}: ${f.error}`)
-    })
-    throw new Error(
-      `Failed to translate ${failedFiles.length} file(s): ${failedFiles.map((f) => f.filename).join(", ")}`,
-    )
-  }
-
-  console.log(`[Railway] 🎉 Successfully translated all ${translatedFiles.length} files sequentially!`)
-
-  return translatedFiles
 }
