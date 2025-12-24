@@ -148,16 +148,23 @@ export async function processTranslationJob(data) {
 
     // Detect template folder structure
     let templateFolder = ""
-    const firstHtmlPath = translatedFiles[0].originalPath
-    if (firstHtmlPath.includes("/")) {
-      templateFolder = firstHtmlPath.substring(0, firstHtmlPath.lastIndexOf("/") + 1)
-      console.log(`[Railway] Template folder: ${templateFolder}`)
+    if (translatedFiles && translatedFiles.length > 0 && translatedFiles[0].originalPath) {
+      const firstHtmlPath = translatedFiles[0].originalPath
+      if (firstHtmlPath && firstHtmlPath.includes("/")) {
+        templateFolder = firstHtmlPath.substring(0, firstHtmlPath.lastIndexOf("/") + 1)
+        console.log(`[Railway] Template folder: ${templateFolder}`)
+      }
+    } else {
+      console.log(`[Railway] No template folder structure detected, using flat structure`)
     }
 
     // Copy all non-HTML files from original ZIP
     const copyTasks = []
     for (const filename of allFilenames) {
+      if (!filename) continue
+
       const file = templateZip.files[filename]
+      if (!file) continue
 
       // Skip directories, Mac metadata, and HTML files
       if (file.dir) continue
