@@ -6,20 +6,38 @@ app.use(express.json({ limit: "50mb" }))
 
 const PORT = process.env.PORT || 3001
 
+const startupTime = new Date()
+const isReady = true
+
 app.get("/", (req, res) => {
   res.json({
     service: "PurePage Translation Worker",
     status: "running",
+    uptime: Math.floor((Date.now() - startupTime.getTime()) / 1000),
+    ready: isReady,
     endpoints: {
       health: "/health",
+      readiness: "/ready",
       translate: "POST /translate",
     },
   })
 })
 
-// Health check
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "translation-worker" })
+  res.json({
+    status: "ok",
+    service: "translation-worker",
+    uptime: Math.floor((Date.now() - startupTime.getTime()) / 1000),
+    timestamp: new Date().toISOString(),
+  })
+})
+
+app.get("/ready", (req, res) => {
+  if (isReady) {
+    res.json({ ready: true })
+  } else {
+    res.status(503).json({ ready: false })
+  }
 })
 
 // Translation webhook endpoint
@@ -67,6 +85,17 @@ async function processTranslationWithRetry(data) {
   }
 }
 
+process.on("uncaughtException", (error) => {
+  console.error("[Railway] Uncaught Exception:", error)
+  console.error(error.stack)
+})
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[Railway] Unhandled Rejection at:", promise, "reason:", reason)
+})
+
 app.listen(PORT, () => {
   console.log(`[Railway] Translation worker running on port ${PORT}`)
+  console.log(`[Railway] Health check available at http://localhost:${PORT}/health`)
+  console.log(`[Railway] Ready check available at http://localhost:${PORT}/ready`)
 })
