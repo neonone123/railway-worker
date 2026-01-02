@@ -2,7 +2,7 @@ import express from "express"
 import { processTranslationJob } from "./translator.js"
 
 const app = express()
-app.use(express.json())
+app.use(express.json({ limit: "50mb" })) // Increased limit to handle large HTML payloads
 
 const PORT = process.env.PORT || 3001
 
@@ -24,25 +24,14 @@ app.get("/health", (req, res) => {
 
 // Translation webhook endpoint
 app.post("/translate", async (req, res) => {
-  const {
-    jobId,
-    projectId,
-    userId,
-    templateId,
-    language,
-    vertical,
-    trafficSource,
-    tone,
-    siteName,
-    contactEmail,
-    projectName,
-  } = req.body
+  const { jobId, projectId, userId, templateZipUrl, processedHtmlFiles, language, projectName } = req.body
 
-  if (!jobId || !projectId || !templateId || !language) {
+  if (!jobId || !projectId || !templateZipUrl || !processedHtmlFiles || !language) {
     return res.status(400).json({ error: "Missing required fields" })
   }
 
   console.log(`[Railway] Received translation job ${jobId} for project ${projectId}`)
+  console.log(`[Railway] Received ${processedHtmlFiles.length} processed HTML files`)
 
   res.json({ received: true, jobId, projectId })
 
@@ -50,13 +39,9 @@ app.post("/translate", async (req, res) => {
     jobId,
     projectId,
     userId,
-    templateId,
+    templateZipUrl,
+    processedHtmlFiles,
     language,
-    vertical,
-    trafficSource,
-    tone,
-    siteName,
-    contactEmail,
     projectName,
   })
 })
