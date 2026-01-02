@@ -42,7 +42,6 @@ export async function processTranslationJob(data) {
 
     const outputZip = new JSZip()
 
-    // Detect template folder structure
     let templateFolder = ""
     if (translatedFiles && translatedFiles.length > 0 && translatedFiles[0].originalPath) {
       const firstHtmlPath = translatedFiles[0].originalPath
@@ -50,8 +49,6 @@ export async function processTranslationJob(data) {
         templateFolder = firstHtmlPath.substring(0, firstHtmlPath.lastIndexOf("/") + 1)
         console.log(`[Railway] Template folder: ${templateFolder}`)
       }
-    } else {
-      console.log(`[Railway] No template folder structure detected, using flat structure`)
     }
 
     // Copy all non-HTML files from original ZIP
@@ -75,12 +72,8 @@ export async function processTranslationJob(data) {
 
       copyTasks.push(
         file.async("arraybuffer").then((content) => {
-          // Strip template folder prefix to flatten structure
-          const strippedPath =
-            templateFolder && filename.startsWith(templateFolder) ? filename.substring(templateFolder.length) : filename
-
-          outputZip.file(strippedPath, content)
-          console.log(`[Railway] Copied: ${strippedPath}`)
+          outputZip.file(filename, content)
+          console.log(`[Railway] Copied: ${filename}`)
         }),
       )
     }
@@ -88,12 +81,9 @@ export async function processTranslationJob(data) {
     await Promise.all(copyTasks)
     console.log(`[Railway] Copied ${copyTasks.length} asset files`)
 
-    // Add translated HTML files
     translatedFiles.forEach((file) => {
-      // Use the filename without folder prefix for flat structure
-      const outputPath = file.filename
-      outputZip.file(outputPath, file.html)
-      console.log(`[Railway] Added translated: ${outputPath}`)
+      outputZip.file(file.originalPath, file.html)
+      console.log(`[Railway] Added translated: ${file.originalPath}`)
     })
 
     // Generate final ZIP
