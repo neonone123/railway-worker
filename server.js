@@ -2,7 +2,7 @@ import express from "express"
 import { processTranslationJob } from "./translator.js"
 
 const app = express()
-app.use(express.json({ limit: "50mb" })) // Increased limit to handle large HTML payloads
+app.use(express.json({ limit: "50mb" }))
 
 const PORT = process.env.PORT || 3001
 
@@ -67,6 +67,6 @@ async function processTranslationWithRetry(data) {
   }
 }
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, () => {
   console.log(`[Railway] Translation worker running on port ${PORT}`)
 })
