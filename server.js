@@ -67,6 +67,6 @@ async function processTranslationWithRetry(data) {
   }
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`[Railway] Translation worker running on port ${PORT}`)
 })
