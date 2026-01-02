@@ -6,45 +6,21 @@ import { translateAllHTMLFiles } from "./gemini-translator.js"
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 export async function processTranslationJob(data) {
-  const {
-    jobId,
-    projectId,
-    userId,
-    templateId,
-    language,
-    vertical,
-    trafficSource,
-    tone,
-    siteName,
-    contactEmail,
-    projectName,
-  } = data
+  const { jobId, projectId, userId, templateZipUrl, processedHtmlFiles, language, projectName } = data
 
   console.log(`[Railway] ========== JOB ${jobId} START ==========`)
   console.log(`[Railway] Project ID: ${projectId}`)
-  console.log(`[Railway] Template ID: ${templateId}`)
   console.log(`[Railway] Target Language: ${language}`)
+  console.log(`[Railway] Received ${processedHtmlFiles?.length || 0} processed HTML files`)
 
   try {
-    await updateProgress(jobId, 5, "Fetching template files...")
-
-    const { data: template, error: templateError } = await supabase
-      .from("generator_templates")
-      .select("*")
-      .eq("id", templateId)
-      .eq("language", "en")
-      .single()
-
-    if (templateError || !template || !template.zip_url) {
-      throw new Error(`Template not found: ${templateError?.message || "Missing ZIP URL"}`)
+    if (!processedHtmlFiles || processedHtmlFiles.length === 0) {
+      throw new Error("No processed HTML files received from Vercel")
     }
 
-    console.log(`[Railway] Template name: ${template.name}`)
-    console.log(`[Railway] ZIP URL: ${template.zip_url}`)
+    await updateProgress(jobId, 15, "Downloading template assets...")
 
-    await updateProgress(jobId, 15, "Downloading template ZIP...")
-
-    const zipResponse = await fetch(template.zip_url)
+    const zipResponse = await fetch(templateZipUrl)
     if (!zipResponse.ok) {
       throw new Error(`Failed to download ZIP: ${zipResponse.status}`)
     }
@@ -54,91 +30,11 @@ export async function processTranslationJob(data) {
 
     const templateZip = await JSZip.loadAsync(zipBuffer)
 
-    await updateProgress(jobId, 25, "Extracting HTML files...")
+    await updateProgress(jobId, 25, `Translating to ${language}...`)
 
-    const htmlFiles = []
-    const allFilenames = Object.keys(templateZip.files)
+    console.log(`[Railway] Starting parallel translation of ${processedHtmlFiles.length} files`)
 
-    console.log(`[Railway] Total files in ZIP: ${allFilenames.length}`)
-
-    for (const filename of allFilenames) {
-      const file = templateZip.files[filename]
-
-      // Skip directories and Mac metadata
-      if (file.dir) continue
-      if (filename.includes("__MACOSX/")) continue
-      if (filename.split("/").pop().startsWith("._")) continue
-      if (filename.endsWith(".DS_Store")) continue
-
-      // Extract HTML files
-      if (filename.toLowerCase().endsWith(".html")) {
-        console.log(`[Railway] Found HTML: ${filename}`)
-        const html = await file.async("text")
-        const baseName = filename.split("/").pop()
-
-        htmlFiles.push({
-          filename: baseName,
-          originalPath: filename,
-          html: html,
-        })
-
-        console.log(`[Railway]   ${baseName}: ${html.length} characters`)
-      }
-    }
-
-    console.log(`[Railway] Extracted ${htmlFiles.length} HTML files`)
-
-    if (htmlFiles.length === 0) {
-      throw new Error("No HTML files found in template ZIP")
-    }
-
-    await updateProgress(jobId, 35, "Fetching content snippets...")
-
-    const { data: snippets } = await supabase
-      .from("generator_snippet_banks")
-      .select("*")
-      .eq("vertical", vertical)
-      .eq("traffic_source", trafficSource)
-      .eq("language", "en")
-      .contains("tags", [tone])
-
-    console.log(`[Railway] Found ${snippets?.length || 0} content snippets`)
-
-    const tokenMap = {
-      site_name: siteName,
-      contact: contactEmail,
-    }
-
-    if (snippets) {
-      snippets.forEach((snippet) => {
-        if (snippet.token_name && snippet.content) {
-          tokenMap[snippet.token_name] = snippet.content
-        }
-      })
-    }
-
-    console.log(`[Railway] Token map: ${Object.keys(tokenMap).length} tokens`)
-
-    await updateProgress(jobId, 40, "Replacing content tokens...")
-
-    htmlFiles.forEach((file) => {
-      let replacements = 0
-      Object.entries(tokenMap).forEach(([tokenName, content]) => {
-        const regex = new RegExp(`\\{\\{${tokenName}\\}\\}`, "gi")
-        const matches = (file.html.match(regex) || []).length
-        if (matches > 0) {
-          file.html = file.html.replace(regex, content)
-          replacements += matches
-        }
-      })
-      console.log(`[Railway] ${file.filename}: ${replacements} token replacements`)
-    })
-
-    await updateProgress(jobId, 45, `Translating to ${language}...`)
-
-    console.log(`[Railway] Starting parallel translation of ${htmlFiles.length} files`)
-
-    const translatedFiles = await translateAllHTMLFiles(htmlFiles, language, vertical)
+    const translatedFiles = await translateAllHTMLFiles(processedHtmlFiles, language, "dating")
 
     console.log(`[Railway] All ${translatedFiles.length} files translated successfully`)
 
@@ -159,6 +55,9 @@ export async function processTranslationJob(data) {
     }
 
     // Copy all non-HTML files from original ZIP
+    const allFilenames = Object.keys(templateZip.files)
+    console.log(`[Railway] Total files in ZIP: ${allFilenames.length}`)
+
     const copyTasks = []
     for (const filename of allFilenames) {
       if (!filename) continue
@@ -166,17 +65,22 @@ export async function processTranslationJob(data) {
       const file = templateZip.files[filename]
       if (!file) continue
 
-      // Skip directories, Mac metadata, and HTML files
+      // Skip directories, Mac metadata, HTML files, and JSON files
       if (file.dir) continue
       if (filename.includes("__MACOSX/")) continue
       if (filename.split("/").pop().startsWith("._")) continue
       if (filename.endsWith(".DS_Store")) continue
       if (filename.toLowerCase().endsWith(".html")) continue
+      if (filename.toLowerCase().endsWith(".json")) continue
 
       copyTasks.push(
         file.async("arraybuffer").then((content) => {
-          outputZip.file(filename, content)
-          console.log(`[Railway] Copied: ${filename}`)
+          // Strip template folder prefix to flatten structure
+          const strippedPath =
+            templateFolder && filename.startsWith(templateFolder) ? filename.substring(templateFolder.length) : filename
+
+          outputZip.file(strippedPath, content)
+          console.log(`[Railway] Copied: ${strippedPath}`)
         }),
       )
     }
@@ -186,8 +90,10 @@ export async function processTranslationJob(data) {
 
     // Add translated HTML files
     translatedFiles.forEach((file) => {
-      outputZip.file(file.originalPath, file.html)
-      console.log(`[Railway] Added translated: ${file.originalPath}`)
+      // Use the filename without folder prefix for flat structure
+      const outputPath = file.filename
+      outputZip.file(outputPath, file.html)
+      console.log(`[Railway] Added translated: ${outputPath}`)
     })
 
     // Generate final ZIP
@@ -212,10 +118,6 @@ export async function processTranslationJob(data) {
     console.log(`[Railway] Uploaded: ${blob.url}`)
 
     await updateProgress(jobId, 95, "Finalizing...")
-
-    // Decrement user credits
-    await supabase.rpc("decrement_pages", { user_id_param: userId })
-    console.log(`[Railway] Credits decremented`)
 
     // Update project
     const { error: projectError } = await supabase
