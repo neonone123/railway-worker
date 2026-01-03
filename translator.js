@@ -42,15 +42,6 @@ export async function processTranslationJob(data) {
 
     const outputZip = new JSZip()
 
-    let templateFolder = ""
-    if (translatedFiles && translatedFiles.length > 0 && translatedFiles[0].filename) {
-      const firstHtmlPath = translatedFiles[0].filename
-      if (firstHtmlPath && firstHtmlPath.includes("/")) {
-        templateFolder = firstHtmlPath.substring(0, firstHtmlPath.lastIndexOf("/") + 1)
-        console.log(`[Railway] Detected template folder prefix: "${templateFolder}"`)
-      }
-    }
-
     // Copy all non-HTML files from original ZIP
     const allFilenames = Object.keys(templateZip.files)
     console.log(`[Railway] Total files in ZIP: ${allFilenames.length}`)
@@ -72,10 +63,8 @@ export async function processTranslationJob(data) {
 
       copyTasks.push(
         file.async("arraybuffer").then((content) => {
-          const outputPath =
-            templateFolder && filename.startsWith(templateFolder) ? filename.substring(templateFolder.length) : filename
-          outputZip.file(outputPath, content)
-          console.log(`[Railway] Copied: ${filename} → ${outputPath}`)
+          outputZip.file(filename, content)
+          console.log(`[Railway] Copied: ${filename}`)
         }),
       )
     }
@@ -84,12 +73,8 @@ export async function processTranslationJob(data) {
     console.log(`[Railway] Copied ${copyTasks.length} asset files`)
 
     translatedFiles.forEach((file) => {
-      const outputPath =
-        templateFolder && file.filename.startsWith(templateFolder)
-          ? file.filename.substring(templateFolder.length)
-          : file.filename
-      outputZip.file(outputPath, file.html)
-      console.log(`[Railway] Added translated: ${file.filename} → ${outputPath}`)
+      outputZip.file(file.filename, file.html)
+      console.log(`[Railway] Added translated: ${file.filename}`)
     })
 
     // Generate final ZIP
